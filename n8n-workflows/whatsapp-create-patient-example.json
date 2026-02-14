@@ -1,0 +1,245 @@
+{
+  "name": "مساعد WhatsApp - إضافة مريض جديد",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "whatsapp-patient",
+        "options": {}
+      },
+      "id": "webhook-whatsapp",
+      "name": "استقبال رسالة WhatsApp",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "whatsapp-patient-webhook",
+      "notes": "استقبال الرسائل من Evolution API"
+    },
+    {
+      "parameters": {
+        "jsCode": "// استخراج الاسم ورقم الهاتف من رسالة WhatsApp\n// الصيغة المتوقعة: \"مريض جديد: محمد أحمد، 0501234567\"\n\nconst message = $input.item.json.data?.message?.conversation || \n                $input.item.json.message?.text || '';\nconst fromNumber = $input.item.json.key?.remoteJid || '';\n\n// محاولة استخراج البيانات بعدة صيغ\nlet name = '';\nlet phone = '';\n\n// صيغة 1: \"مريض جديد: الاسم، الهاتف\"\nconst pattern1 = /مريض جديد[:\\s]+([^،]+)[،\\s]+(\\d{10,})/;\nconst match1 = message.match(pattern1);\n\nif (match1) {\n  name = match1[1].trim();\n  phone = match1[2].trim();\n}\n\n// صيغة 2: \"اضف مريض الاسم الهاتف\"\nconst pattern2 = /(?:اضف|أضف|اضافة|إضافة)\\s+مريض[:\\s]+([^0-9]+)(\\d{10,})/;\nconst match2 = message.match(pattern2);\n\nif (!name && match2) {\n  name = match2[1].trim();\n  phone = match2[2].trim();\n}\n\n// صيغة 3: \"الاسم: ... الهاتف: ...\"\nconst pattern3 = /الاسم[:\\s]+([^\\n]+).*الهاتف[:\\s]+(\\d{10,})/s;\nconst match3 = message.match(pattern3);\n\nif (!name && match3) {\n  name = match3[1].trim();\n  phone = match3[2].trim();\n}\n\nreturn {\n  json: {\n    name: name,\n    phone: phone,\n    originalMessage: message,\n    fromNumber: fromNumber,\n    hasValidData: name && phone ? true : false\n  }\n};"
+      },
+      "id": "extract-data",
+      "name": "استخراج البيانات من الرسالة",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.hasValidData }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "check-data",
+      "name": "هل البيانات صحيحة؟",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:3001/api/create-patient",
+        "authentication": "none",
+        "requestMethod": "POST",
+        "jsonParameters": true,
+        "bodyParametersJson": "={{ { \"name\": $json.name, \"phone\": $json.phone } }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "create-patient",
+      "name": "إنشاء المريض",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [850, 200]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:3100/message/sendText/YOUR_INSTANCE",
+        "authentication": "none",
+        "requestMethod": "POST",
+        "jsonParameters": true,
+        "bodyParametersJson": "={{ {\n  \"number\": $('استخراج البيانات من الرسالة').item.json.fromNumber,\n  \"text\": \"✅ تم إضافة المريض بنجاح!\\n\\n📝 الاسم: \" + $json.patient.name + \"\\n📞 الهاتف: \" + $json.patient.phone + \"\\n🆔 المعرف: \" + $json.patient.id + \"\\n\\nيمكنك الآن حجز موعد للمريض.\"\n} }}",
+        "options": {}
+      },
+      "id": "send-success-message",
+      "name": "إرسال رسالة نجاح",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1050, 200],
+      "notes": "إرسال تأكيد عبر WhatsApp"
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:3100/message/sendText/YOUR_INSTANCE",
+        "authentication": "none",
+        "requestMethod": "POST",
+        "jsonParameters": true,
+        "bodyParametersJson": "={{ {\n  \"number\": $('استخراج البيانات من الرسالة').item.json.fromNumber,\n  \"text\": \"❌ عذراً، لم أتمكن من فهم طلبك.\\n\\nالرجاء استخدام الصيغة التالية:\\n\\n*مريض جديد: الاسم، رقم الهاتف*\\n\\nمثال:\\nمريض جديد: محمد أحمد، 0501234567\"\n} }}",
+        "options": {}
+      },
+      "id": "send-error-format",
+      "name": "رسالة خطأ في الصيغة",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [850, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.statusCode }}",
+              "operation": "equal",
+              "value2": 409
+            }
+          ]
+        }
+      },
+      "id": "check-duplicate",
+      "name": "هل مريض مكرر؟",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1050, 350]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:3100/message/sendText/YOUR_INSTANCE",
+        "authentication": "none",
+        "requestMethod": "POST",
+        "jsonParameters": true,
+        "bodyParametersJson": "={{ {\n  \"number\": $('استخراج البيانات من الرسالة').item.json.fromNumber,\n  \"text\": \"⚠️ المريض موجود مسبقاً!\\n\\n📝 الاسم: \" + $json.existingPatient.name + \"\\n📞 الهاتف: \" + $json.existingPatient.phone + \"\\n🆔 المعرف: \" + $json.existingPatient.id + \"\\n\\nيمكنك حجز موعد مباشرة.\"\n} }}",
+        "options": {}
+      },
+      "id": "send-duplicate-message",
+      "name": "رسالة مريض موجود",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:3100/message/sendText/YOUR_INSTANCE",
+        "authentication": "none",
+        "requestMethod": "POST",
+        "jsonParameters": true,
+        "bodyParametersJson": "={{ {\n  \"number\": $('استخراج البيانات من الرسالة').item.json.fromNumber,\n  \"text\": \"❌ حدث خطأ أثناء إضافة المريض.\\n\\nالرجاء المحاولة مرة أخرى أو الاتصال بالعيادة.\"\n} }}",
+        "options": {}
+      },
+      "id": "send-error-message",
+      "name": "رسالة خطأ عام",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1250, 450]
+    }
+  ],
+  "connections": {
+    "استقبال رسالة WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "استخراج البيانات من الرسالة",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "استخراج البيانات من الرسالة": {
+      "main": [
+        [
+          {
+            "node": "هل البيانات صحيحة؟",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "هل البيانات صحيحة؟": {
+      "main": [
+        [
+          {
+            "node": "إنشاء المريض",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "رسالة خطأ في الصيغة",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "إنشاء المريض": {
+      "main": [
+        [
+          {
+            "node": "إرسال رسالة نجاح",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "هل مريض مكرر؟",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "هل مريض مكرر؟": {
+      "main": [
+        [
+          {
+            "node": "رسالة مريض موجود",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "رسالة خطأ عام",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2024-02-14T10:00:00.000Z",
+      "updatedAt": "2024-02-14T10:00:00.000Z",
+      "id": "1",
+      "name": "WhatsApp"
+    },
+    {
+      "createdAt": "2024-02-14T10:00:00.000Z",
+      "updatedAt": "2024-02-14T10:00:00.000Z",
+      "id": "2",
+      "name": "Patients"
+    }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2024-02-14T10:00:00.000Z",
+  "versionId": "1"
+}

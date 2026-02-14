@@ -1,0 +1,145 @@
+{
+  "name": "Dental Clinic - Appointment Reminder",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "dental-appointment",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "dental-clinic-webhook"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 24
+            }
+          ]
+        }
+      },
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [250, 500]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:3001/api/appointments/today",
+        "options": {}
+      },
+      "name": "Get Today Appointments",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [450, 500]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Extract appointments from response\nconst appointments = items[0].json.appointments || [];\n\n// Transform to n8n format\nreturn appointments.map(apt => ({\n  json: {\n    patientName: apt.patient.name,\n    patientPhone: apt.patient.phone,\n    appointmentTime: apt.appointment_date,\n    notes: apt.notes\n  }\n}));"
+      },
+      "name": "Process Appointments",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [650, 500]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:8080/message/sendText/dental_clinic",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "YOUR_EVOLUTION_API_KEY"
+            }
+          ]
+        },
+        "options": {},
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "number",
+              "value": "={{$json[\"patientPhone\"]}}"
+            },
+            {
+              "name": "textMessage",
+              "value": "={\"text\": \"مرحباً {{$json[\"patientName\"]}}،\\n\\nنذكركم بموعدكم في عيادة الأسنان غداً.\\n\\nالتاريخ: {{$json[\"appointmentTime\"]}}\\n\\nنتطلع لرؤيتكم.\"}"
+            }
+          ]
+        }
+      },
+      "name": "Send WhatsApp Reminder",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [850, 500]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"success\": true, \"message\": \"تم استلام البيانات بنجاح\"}"
+      },
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [450, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Today Appointments",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Today Appointments": {
+      "main": [
+        [
+          {
+            "node": "Process Appointments",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Appointments": {
+      "main": [
+        [
+          {
+            "node": "Send WhatsApp Reminder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {},
+  "id": "dental-clinic-reminder"
+}
