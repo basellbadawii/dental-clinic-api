@@ -1,0 +1,136 @@
+{
+  "name": "AI Receptionist - Dental Clinic",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ai-receptionist",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook - WhatsApp Message",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "ai-receptionist-webhook"
+    },
+    {
+      "parameters": {
+        "url": "=YOUR_TYPEBOT_OR_FLOWISE_URL",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_API_KEY"
+            }
+          ]
+        },
+        "requestMethod": "POST",
+        "jsonParameters": true,
+        "bodyParametersJson": "={{ {\n  \"message\": $json.body.message.text,\n  \"phone\": $json.body.sender.phone,\n  \"sessionId\": $json.body.sender.phone,\n  \"context\": {\n    \"systemPrompt\": \"Role: You are a smart medical receptionist for a Dental Clinic. Your goal is to book appointments with the least amount of friction.\\n\\nInstructions:\\n\\n1. Identify Patient: Always start by asking for the patient's phone number. Use the get-patient tool to check if they have an existing file. If found, greet them by their name.\\n\\n2. Check Slot: When the patient suggests a date and time (e.g., \\\"Tomorrow at 5 PM\\\"), you MUST first use the check-availability tool.\\n   - If the slot is Available: Proceed to the next step.\\n   - If the slot is Taken: Inform the patient and suggest the next closest available time.\\n\\n3. Book Appointment: Only after confirming availability and having the patient's phone number, use the book-appointment tool to finalize the booking.\\n\\n4. Conciseness: Be professional, brief, and helpful. Do not ask for information you already have.\\n\\nData Formatting:\\n- Dates should be in YYYY-MM-DD format.\\n- Times should be in HH:mm format.\",\n    \"tools\": [\n      {\n        \"name\": \"get-patient\",\n        \"description\": \"Get patient information by phone number\",\n        \"endpoint\": \"http://localhost:3001/api/ai/get-patient\",\n        \"parameters\": {\n          \"phone\": \"Patient's phone number\"\n        }\n      },\n      {\n        \"name\": \"check-availability\",\n        \"description\": \"Check if an appointment slot is available\",\n        \"endpoint\": \"http://localhost:3001/api/ai/check-availability\",\n        \"parameters\": {\n          \"date\": \"Date in YYYY-MM-DD format\",\n          \"time\": \"Time in HH:mm format (24-hour)\"\n        }\n      },\n      {\n        \"name\": \"book-appointment\",\n        \"description\": \"Book an appointment for a patient\",\n        \"endpoint\": \"http://localhost:3001/api/ai/book-appointment\",\n        \"parameters\": {\n          \"phone\": \"Patient's phone number\",\n          \"date\": \"Date in YYYY-MM-DD format\",\n          \"time\": \"Time in HH:mm format\",\n          \"notes\": \"Optional notes\"\n        }\n      }\n    ]\n  }\n} }}",
+        "options": {}
+      },
+      "id": "ai-agent-call",
+      "name": "Call AI Agent (Typebot/Flowise)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:8080/message/sendText/dental_clinic",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "YOUR_EVOLUTION_API_KEY"
+            }
+          ]
+        },
+        "requestMethod": "POST",
+        "jsonParameters": true,
+        "bodyParametersJson": "={{ {\n  \"number\": $json.body.sender.phone,\n  \"textMessage\": {\n    \"text\": $node[\"Call AI Agent (Typebot/Flowise)\"].json.response\n  }\n} }}",
+        "options": {}
+      },
+      "id": "send-whatsapp-response",
+      "name": "Send WhatsApp Response",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"success\": true, \"message\": \"Message processed\" } }}",
+        "options": {}
+      },
+      "id": "respond-webhook",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// This node handles tool calls from the AI agent\nconst tools = $input.item.json.tools || [];\nconst results = [];\n\nfor (const toolCall of tools) {\n  let response;\n  \n  if (toolCall.name === 'get-patient') {\n    response = await $http.request({\n      method: 'POST',\n      url: 'http://localhost:3001/api/ai/get-patient',\n      body: { phone: toolCall.parameters.phone },\n      json: true\n    });\n  } else if (toolCall.name === 'check-availability') {\n    response = await $http.request({\n      method: 'POST',\n      url: 'http://localhost:3001/api/ai/check-availability',\n      body: {\n        date: toolCall.parameters.date,\n        time: toolCall.parameters.time\n      },\n      json: true\n    });\n  } else if (toolCall.name === 'book-appointment') {\n    response = await $http.request({\n      method: 'POST',\n      url: 'http://localhost:3001/api/ai/book-appointment',\n      body: {\n        phone: toolCall.parameters.phone,\n        date: toolCall.parameters.date,\n        time: toolCall.parameters.time,\n        notes: toolCall.parameters.notes\n      },\n      json: true\n    });\n  }\n  \n  results.push({\n    tool: toolCall.name,\n    result: response\n  });\n}\n\nreturn [{ json: { toolResults: results } }];"
+      },
+      "id": "tool-executor",
+      "name": "Execute AI Tools",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [450, 500],
+      "notes": "This node executes tool calls requested by the AI agent"
+    }
+  ],
+  "connections": {
+    "Webhook - WhatsApp Message": {
+      "main": [
+        [
+          {
+            "node": "Call AI Agent (Typebot/Flowise)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call AI Agent (Typebot/Flowise)": {
+      "main": [
+        [
+          {
+            "node": "Send WhatsApp Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send WhatsApp Response": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": ["ai", "receptionist", "whatsapp"],
+  "triggerCount": 1,
+  "updatedAt": "2024-02-15T01:00:00.000Z",
+  "versionId": "1"
+}

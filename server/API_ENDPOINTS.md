@@ -8,12 +8,150 @@ http://localhost:3001
 ---
 
 ## 📋 جدول المحتويات
-1. [Health Check](#health-check)
-2. [Patients APIs](#patients-apis)
-3. [Appointments APIs](#appointments-apis)
-4. [Visits APIs](#visits-apis)
-5. [Statistics APIs](#statistics-apis)
-6. [Webhooks](#webhooks)
+1. [AI Agent APIs](#ai-agent-apis) 🤖 **جديد**
+2. [Health Check](#health-check)
+3. [Patients APIs](#patients-apis)
+4. [Appointments APIs](#appointments-apis)
+5. [Visits APIs](#visits-apis)
+6. [Statistics APIs](#statistics-apis)
+7. [Webhooks](#webhooks)
+
+---
+
+## 🤖 AI Agent APIs
+
+### POST `/api/ai/get-patient`
+البحث عن مريض باستخدام رقم الهاتف - للمساعد الذكي
+
+**Request Body:**
+```json
+{
+  "phone": "01234567890"
+}
+```
+
+**Response (Found):**
+```json
+{
+  "success": true,
+  "found": true,
+  "patient": {
+    "id": 1,
+    "name": "أحمد محمد",
+    "phone": "01234567890",
+    "email": "ahmed@example.com",
+    "medical_history": "..."
+  },
+  "message_ar": "مرحباً أحمد محمد! وجدنا ملفك في النظام."
+}
+```
+
+**Response (Not Found):**
+```json
+{
+  "success": true,
+  "found": false,
+  "message": "No patient found with this phone number",
+  "message_ar": "لم يتم العثور على مريض بهذا الرقم"
+}
+```
+
+---
+
+### POST `/api/ai/check-availability`
+التحقق من توفر موعد معين
+
+**Request Body:**
+```json
+{
+  "date": "2024-02-20",
+  "time": "14:30"
+}
+```
+
+**Response (Available):**
+```json
+{
+  "success": true,
+  "available": true,
+  "date": "2024-02-20",
+  "time": "14:30",
+  "message": "This time slot is available",
+  "message_ar": "هذا الموعد متاح"
+}
+```
+
+**Response (Not Available):**
+```json
+{
+  "success": true,
+  "available": false,
+  "date": "2024-02-20",
+  "time": "14:30",
+  "message": "This time slot is already taken",
+  "message_ar": "هذا الموعد محجوز بالفعل",
+  "nextAvailable": {
+    "date": "2024-02-20",
+    "time": "15:00",
+    "message_ar": "الموعد القريب المتاح هو الساعة 15:00"
+  }
+}
+```
+
+**Validation:**
+- Date format: `YYYY-MM-DD`
+- Time format: `HH:mm` (24-hour)
+- Working hours: 09:00 - 18:00
+- Slot duration: 30 minutes
+
+---
+
+### POST `/api/ai/book-appointment`
+حجز موعد لمريض موجود
+
+**Request Body:**
+```json
+{
+  "phone": "01234567890",
+  "date": "2024-02-20",
+  "time": "14:30",
+  "notes": "فحص دوري"
+}
+```
+
+**Response (Success):**
+```json
+{
+  "success": true,
+  "message": "Appointment booked successfully",
+  "message_ar": "تم حجز موعدك بنجاح يا أحمد محمد! نتطلع لرؤيتك يوم 2024-02-20 الساعة 14:30",
+  "appointment": {
+    "id": 123,
+    "patient_name": "أحمد محمد",
+    "date": "2024-02-20",
+    "time": "14:30",
+    "status": "scheduled"
+  }
+}
+```
+
+**Response (Patient Not Found - 404):**
+```json
+{
+  "success": false,
+  "error": "Patient not found. Please create patient first.",
+  "error_ar": "المريض غير موجود. يرجى إنشاء ملف المريض أولاً"
+}
+```
+
+**Response (Slot Not Available - 409):**
+```json
+{
+  "success": false,
+  "error": "This time slot is no longer available",
+  "error_ar": "هذا الموعد لم يعد متاحاً"
+}
+```
 
 ---
 
